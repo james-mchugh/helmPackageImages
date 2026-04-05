@@ -1,9 +1,10 @@
 package manifest
 
+import "k8s.io/apimachinery/pkg/runtime"
+
 // CRDEntry describes a custom resource kind whose image fields should be extracted.
 type CRDEntry struct {
-	Kind       string   `yaml:"kind"`
-	APIVersion string   `yaml:"apiVersion"`
+	runtime.TypeMeta
 	ImagePaths []string `yaml:"imagePaths"`
 }
 
@@ -12,9 +13,6 @@ type Settings struct {
 	// Platform is a comma-separated list of os/arch targets (e.g. "linux/amd64,linux/arm64").
 	// Empty means the current system platform.
 	Platform string `yaml:"platform"`
-
-	// IncludeChartDependencies controls whether subchart templates are rendered and scanned.
-	IncludeChartDependencies bool `yaml:"includeChartDependencies"`
 
 	// ScrapeValues enables naive heuristic scanning of values.yaml for image-like strings.
 	ScrapeValues bool `yaml:"scrapeValues"`

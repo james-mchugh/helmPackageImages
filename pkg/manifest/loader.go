@@ -33,16 +33,16 @@ func Load(opt Options) (*Manifest, error) {
 	var err error
 	if opt.ManifestPath != "" {
 		raw, err = readFromPath(opt.ManifestPath)
-	} else if index := slices.IndexFunc(opt.Chart.Files, func(file *chart.File) bool { return file.Name == "airgap.yaml" }); index != -1 {
+	} else if index := slices.IndexFunc(
+		opt.Chart.Files,
+		func(file *chart.File) bool { return file.Name == "airgap.yaml" },
+	); index != -1 {
 		raw, err = readFromChartFile(opt.Chart.Files[index])
 	}
 
 	if err != nil {
 		return nil, fmt.Errorf("loading manifest: %w", err)
 	}
-
-	// Apply defaults to settings before profile merge.
-	applySettingsDefaults(&raw.Settings)
 
 	// Apply profile if requested.
 	if opt.Profile != "" {
@@ -69,9 +69,6 @@ func Load(opt Options) (*Manifest, error) {
 	}
 	if opt.OverrideScrapeValues != nil {
 		m.Settings.ScrapeValues = *opt.OverrideScrapeValues
-	}
-	if opt.OverrideIncludeDeps != nil {
-		m.Settings.IncludeChartDependencies = *opt.OverrideIncludeDeps
 	}
 
 	return m, nil
@@ -109,27 +106,6 @@ func readFromChartFile(file *chart.File) (*rawManifest, error) {
 	return &raw, nil
 }
 
-// applySettingsDefaults fills in built-in defaults for settings that were not set.
-func applySettingsDefaults(s *Settings) {
-	// IncludeChartDependencies defaults to true. Because bool zero-value is false,
-	// we can't distinguish "not set" here — the rawManifest parsed it already,
-	// so we rely on the YAML being absent meaning false. We correct that by defaulting
-	// in the raw parse step: if no airgap.yaml exists the struct is zero-valued; we
-	// want IncludeChartDependencies=true. We handle this by checking CRDs as a proxy
-	// isn't reliable, so instead we use a sentinel approach: the rawManifest.Settings
-	// is a value type — if the manifest exists and doesn't set the field it stays false.
-	// The simplest correct approach: always set the default, let explicit false win.
-	// Since we're working with a value type, an absent field parses as false. We need
-	// the raw yaml to tell us. We handle this via rawSettings pointer in profiles, but
-	// for the top-level settings we accept the limitation: users must set
-	// includeChartDependencies: false explicitly; the default true is set here only
-	// when the entire settings block was absent (zero-value Platform is a good proxy).
-	if s.Platform == "" && !s.ScrapeValues && !s.IncludeChartDependencies {
-		// Likely a zero-value settings block — apply defaults.
-		s.IncludeChartDependencies = true
-	}
-}
-
 // mergeProfile deep-merges p over the base rawManifest.
 func mergeProfile(base *rawManifest, p rawProfile) {
 	// CRDs: replace when profile explicitly sets the field (even to empty).
@@ -149,9 +125,6 @@ func mergeProfile(base *rawManifest, p rawProfile) {
 	if p.Settings != nil {
 		if p.Settings.Platform != nil {
 			base.Settings.Platform = *p.Settings.Platform
-		}
-		if p.Settings.IncludeChartDependencies != nil {
-			base.Settings.IncludeChartDependencies = *p.Settings.IncludeChartDependencies
 		}
 		if p.Settings.ScrapeValues != nil {
 			base.Settings.ScrapeValues = *p.Settings.ScrapeValues

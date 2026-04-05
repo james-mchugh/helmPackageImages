@@ -1,110 +1,53 @@
 package extractor
 
 import (
-	"strings"
-
-	"sigs.k8s.io/yaml"
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// resource is a minimal representation of a Kubernetes manifest for GVK detection.
-type resource struct {
-	APIVersion string `json:"apiVersion"`
-	Kind       string `json:"kind"`
-	Spec       struct {
-		// Pod-level containers (kind: Pod).
-		Containers          []container `json:"containers"`
-		InitContainers      []container `json:"initContainers"`
-		EphemeralContainers []container `json:"ephemeralContainers"`
-		// Workload wrapper (Deployment, StatefulSet, DaemonSet, Job, ReplicaSet).
-		Template *podTemplateSpec `json:"template"`
-		// CronJob wrapper.
-		JobTemplate *struct {
-			Spec struct {
-				Template podTemplateSpec `json:"template"`
-			} `json:"spec"`
-		} `json:"jobTemplate"`
-	} `json:"spec"`
-}
-
-type podTemplateSpec struct {
-	Spec struct {
-		Containers          []container `json:"containers"`
-		InitContainers      []container `json:"initContainers"`
-		EphemeralContainers []container `json:"ephemeralContainers"`
-	} `json:"spec"`
-}
-
-type container struct {
-	Image string `json:"image"`
-}
-
-// builtinKinds lists GVK combinations (kind, apiVersion prefix) that contain pod specs.
-var builtinKinds = map[string]bool{
-	"Deployment":  true,
-	"StatefulSet": true,
-	"DaemonSet":   true,
-	"Job":         true,
-	"CronJob":     true,
-	"ReplicaSet":  true,
-	"Pod":         true,
-}
-
-// ExtractBuiltin scans rendered YAML documents for images in known workload types.
+// ExtractBuiltin scans Kubernetes objects images in known workload types.
 // Duplicate images are removed before returning.
-func ExtractBuiltin(docs []string) ([]string, error) {
+func ExtractBuiltin(objs []runtime.Object) ([]string, error) {
 	seen := map[string]struct{}{}
-	for _, doc := range docs {
-		// A single doc string may contain multiple YAML documents separated by "---".
-		for _, part := range splitYAMLDocs(doc) {
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue
-			}
-			var r resource
-			if err := yaml.Unmarshal([]byte(part), &r); err != nil {
-				continue // skip non-YAML fragments
-			}
-			if !builtinKinds[r.Kind] {
-				continue
-			}
-			for _, img := range imagesFromResource(r) {
-				if img != "" {
-					seen[img] = struct{}{}
-				}
+	for _, obj := range objs {
+		for _, img := range imagesFromResource(obj) {
+			if img != "" {
+				seen[img] = struct{}{}
 			}
 		}
 	}
 	return setToSlice(seen), nil
 }
 
-func imagesFromResource(r resource) []string {
+func imagesFromResource(obj runtime.Object) []string {
 	var imgs []string
-	switch r.Kind {
-	case "Pod":
-		imgs = append(imgs, containerImages(r.Spec.Containers)...)
-		imgs = append(imgs, containerImages(r.Spec.InitContainers)...)
-		imgs = append(imgs, containerImages(r.Spec.EphemeralContainers)...)
-	case "CronJob":
-		if r.Spec.JobTemplate != nil {
-			imgs = append(imgs, podSpecImages(r.Spec.JobTemplate.Spec.Template)...)
-		}
-	default:
-		if r.Spec.Template != nil {
-			imgs = append(imgs, podSpecImages(*r.Spec.Template)...)
-		}
+	switch o := obj.(type) {
+	case *appsv1.Deployment:
+		imgs = podSpecImages(o.Spec.Template.Spec)
+	case *appsv1.StatefulSet:
+		imgs = podSpecImages(o.Spec.Template.Spec)
+	case *appsv1.DaemonSet:
+		imgs = podSpecImages(o.Spec.Template.Spec)
+	case *batchv1.CronJob:
+		imgs = podSpecImages(o.Spec.JobTemplate.Spec.Template.Spec)
+	case *batchv1.Job:
+		imgs = podSpecImages(o.Spec.Template.Spec)
+	case *corev1.Pod:
+		imgs = podSpecImages(o.Spec)
 	}
 	return imgs
 }
 
-func podSpecImages(t podTemplateSpec) []string {
+func podSpecImages(t corev1.PodSpec) []string {
 	var imgs []string
-	imgs = append(imgs, containerImages(t.Spec.Containers)...)
-	imgs = append(imgs, containerImages(t.Spec.InitContainers)...)
-	imgs = append(imgs, containerImages(t.Spec.EphemeralContainers)...)
+	imgs = append(imgs, containerImages(t.Containers)...)
+	imgs = append(imgs, containerImages(t.InitContainers)...)
 	return imgs
 }
 
-func containerImages(cs []container) []string {
+func containerImages(cs []corev1.Container) []string {
 	out := make([]string, 0, len(cs))
 	for _, c := range cs {
 		if c.Image != "" {
@@ -112,11 +55,6 @@ func containerImages(cs []container) []string {
 		}
 	}
 	return out
-}
-
-// splitYAMLDocs splits a string on "---" document separators.
-func splitYAMLDocs(s string) []string {
-	return strings.Split(s, "\n---")
 }
 
 func setToSlice(m map[string]struct{}) []string {
