@@ -1,18 +1,11 @@
 package helm_test
 
 import (
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
 	helmrender "helmPackageImages/pkg/helm"
 )
-
-func chartPath(name string) string {
-	_, file, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(file), "../../testdata/charts", name)
-}
 
 func TestRender_SimpleChart(t *testing.T) {
 	chrt, err := helmrender.Fetch(chartPath("simple"))

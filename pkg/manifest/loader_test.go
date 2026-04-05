@@ -5,21 +5,23 @@ import (
 	"path/filepath"
 	"testing"
 
+	"helm.sh/helm/v3/pkg/chart"
+
 	"helmPackageImages/pkg/manifest"
 )
 
-func writeFile(t *testing.T, dir, name, content string) string {
-	t.Helper()
-	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatalf("writeFile: %v", err)
+// chartWithManifest builds a minimal *chart.Chart with airgap.yaml embedded.
+func chartWithManifest(content string) *chart.Chart {
+	return &chart.Chart{
+		Files: []*chart.File{
+			{Name: "airgap.yaml", Data: []byte(content)},
+		},
 	}
-	return path
 }
 
 func TestLoad_MinimalManifest(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "airgap.yaml", `
+	m, err := manifest.Load(manifest.Options{
+		Chart: chartWithManifest(`
 crds:
   - kind: MyOp
     apiVersion: mygroup.io/v1alpha1
@@ -32,8 +34,8 @@ settings:
   platform: linux/amd64
   includeChartDependencies: false
   scrapeValues: true
-`)
-	m, err := manifest.Load(manifest.Options{ChartRoot: dir})
+`),
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -52,8 +54,7 @@ settings:
 }
 
 func TestLoad_MissingManifest_ReturnsDefaults(t *testing.T) {
-	dir := t.TempDir()
-	m, err := manifest.Load(manifest.Options{ChartRoot: dir})
+	m, err := manifest.Load(manifest.Options{Chart: &chart.Chart{}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -84,8 +85,8 @@ settings:
 }
 
 func TestLoad_ProfileMerge_Settings(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "airgap.yaml", `
+	m, err := manifest.Load(manifest.Options{
+		Chart: chartWithManifest(`
 settings:
   platform: linux/amd64
   includeChartDependencies: true
@@ -94,8 +95,9 @@ profiles:
   multi-arch:
     settings:
       platform: linux/amd64,linux/arm64
-`)
-	m, err := manifest.Load(manifest.Options{ChartRoot: dir, Profile: "multi-arch"})
+`),
+		Profile: "multi-arch",
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -109,8 +111,8 @@ profiles:
 }
 
 func TestLoad_ProfileMerge_Values(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "airgap.yaml", `
+	m, err := manifest.Load(manifest.Options{
+		Chart: chartWithManifest(`
 values:
   component:
     enabled: true
@@ -120,8 +122,9 @@ profiles:
     values:
       component:
         enabled: false
-`)
-	m, err := manifest.Load(manifest.Options{ChartRoot: dir, Profile: "disable-component"})
+`),
+		Profile: "disable-component",
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -139,8 +142,8 @@ profiles:
 }
 
 func TestLoad_ProfileMerge_CRDs_Replaced(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "airgap.yaml", `
+	m, err := manifest.Load(manifest.Options{
+		Chart: chartWithManifest(`
 crds:
   - kind: Base
     apiVersion: a/v1
@@ -148,8 +151,9 @@ crds:
 profiles:
   no-crds:
     crds: []
-`)
-	m, err := manifest.Load(manifest.Options{ChartRoot: dir, Profile: "no-crds"})
+`),
+		Profile: "no-crds",
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,8 +163,8 @@ profiles:
 }
 
 func TestLoad_ProfileMerge_CRDs_NotApplied_WhenAbsent(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "airgap.yaml", `
+	m, err := manifest.Load(manifest.Options{
+		Chart: chartWithManifest(`
 crds:
   - kind: Base
     apiVersion: a/v1
@@ -169,8 +173,9 @@ profiles:
   settings-only:
     settings:
       scrapeValues: true
-`)
-	m, err := manifest.Load(manifest.Options{ChartRoot: dir, Profile: "settings-only"})
+`),
+		Profile: "settings-only",
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,16 +185,14 @@ profiles:
 }
 
 func TestLoad_CLIOverrides(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "airgap.yaml", `
+	trueVal := true
+	m, err := manifest.Load(manifest.Options{
+		Chart: chartWithManifest(`
 settings:
   platform: linux/amd64
   scrapeValues: false
   includeChartDependencies: true
-`)
-	trueVal := true
-	m, err := manifest.Load(manifest.Options{
-		ChartRoot:            dir,
+`),
 		OverridePlatform:     "linux/arm64",
 		OverrideScrapeValues: &trueVal,
 		OverrideIncludeDeps:  boolPtr(false),
@@ -209,15 +212,22 @@ settings:
 }
 
 func TestLoad_UnknownProfile_ReturnsError(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "airgap.yaml", `
-profiles:
-  real: {}
-`)
-	_, err := manifest.Load(manifest.Options{ChartRoot: dir, Profile: "nonexistent"})
+	_, err := manifest.Load(manifest.Options{
+		Chart:   chartWithManifest("profiles:\n  real: {}\n"),
+		Profile: "nonexistent",
+	})
 	if err == nil {
 		t.Error("expected error for unknown profile")
 	}
+}
+
+func writeFile(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("writeFile: %v", err)
+	}
+	return path
 }
 
 func boolPtr(b bool) *bool { return &b }

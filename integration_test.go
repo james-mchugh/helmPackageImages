@@ -29,9 +29,9 @@ func imageDiscoveryPipeline(t *testing.T, chartRef string, manifestOpts manifest
 		t.Fatalf("helm.Fetch: %v", err)
 	}
 
-	// Load manifest — use chartRoot so airgap.yaml in the chart dir is found.
-	if manifestOpts.ChartRoot == "" {
-		manifestOpts.ChartRoot = chartRoot
+	// Load manifest — inject the fetched chart so embedded airgap.yaml is found.
+	if manifestOpts.Chart == nil {
+		manifestOpts.Chart = chrt
 	}
 	m, err := manifest.Load(manifestOpts)
 	if err != nil {
