@@ -1,0 +1,13 @@
+name: "package-images"
+version: "0.1.0"
+usage: "Package container images from a Helm chart into an OCI or Docker archive"
+description: |-
+  Renders one or more Helm charts, discovers all container image references,
+  pulls them, and packages them into an archive for transfer to air-gapped environments.
+
+  Remote charts (e.g. stable/nginx, oci://registry/chart) require the repository
+  to be registered via 'helm repo add' first.
+command: "$HELM_PLUGIN_DIR/bin/helm-package-images"
+hooks:
+  install: "scripts/install.sh"
+  update: "scripts/install.sh"

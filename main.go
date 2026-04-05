@@ -36,7 +36,7 @@ func newRootCmd() *cobra.Command {
 	var opt options
 
 	cmd := &cobra.Command{
-		Use:   "helm-package-images [chart...]",
+		Use:   "helm package-images [chart...]",
 		Short: "Package container images from a Helm chart into an OCI archive",
 		Long: `Renders one or more Helm charts, discovers all container image references,
 pulls them, and packages them into an OCI-compatible tar archive for transfer

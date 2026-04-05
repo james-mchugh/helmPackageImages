@@ -11,19 +11,12 @@ import (
 	"helm.sh/helm/v3/pkg/registry"
 )
 
-// Fetch resolves a chart reference and returns the loaded chart along with
-// its root directory on disk. The root is empty for OCI charts loaded in memory.
+// Fetch resolves a chart reference and returns the loaded chart.
 //
 // Version is specified inline in the reference:
 //   - OCI:       oci://registry/chart:1.2.3  (standard OCI tag, passed through as-is)
 //   - HTTP repo: stable/nginx:1.2.3          (version split off before calling action.Pull)
 //   - Local:     ./my-chart or /path/chart   (no version concept)
-//
-// Reference classification order:
-//  1. Disk existence check — full string exists on disk → local
-//  2. Path prefix — starts with /, ./, or ../ → local
-//  3. OCI prefix — registry.IsOCI(ref) → OCI in-memory pull
-//  4. Everything else → HTTP repo pull (version split from :suffix)
 func Fetch(ref string) (*chart.Chart, error) {
 	cleanRef, version := SplitVersion(ref)
 
@@ -37,12 +30,12 @@ func Fetch(ref string) (*chart.Chart, error) {
 		return nil, fmt.Errorf("failed to locate chart: %w", err)
 	}
 
-	chart, err := loader.Load(chartPath)
+	chrt, err := loader.Load(chartPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load chart from %s: %w", chartPath, err)
 	}
 
-	return chart, nil
+	return chrt, nil
 
 }
 
