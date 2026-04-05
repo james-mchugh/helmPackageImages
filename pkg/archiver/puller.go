@@ -50,11 +50,16 @@ func Pull(refs []string, opt PullOptions) (map[string]v1.Image, error) {
 				return nil, fmt.Errorf("image index for %q: %w", ref, err)
 			}
 			for _, p := range platforms {
+				if p == "" {
+					// No platform filter specified; skip multi-arch images to avoid
+					// matching against an empty OS string.
+					continue
+				}
 				img, err := imageForPlatform(idx, p)
 				if err != nil {
 					return nil, fmt.Errorf("platform %s for %q: %w", p, ref, err)
 				}
-				key := ref + " " + p
+				key := ref + "-" + strings.ReplaceAll(p, "/", "-")
 				result[key] = img
 			}
 		default:
