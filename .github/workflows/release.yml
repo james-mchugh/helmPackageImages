@@ -55,7 +55,7 @@ jobs:
             BIN="${BIN}${EXT}"
           fi
           TARBALL="helm-package-images_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz"
-          tar -cvzf "${TARBALL}" "${BIN}" "plugin.yaml" "scripts/"
+          tar czf "${TARBALL}" "${BIN}"
           echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
 
       - name: Upload to GitHub Release
