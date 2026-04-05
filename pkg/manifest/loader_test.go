@@ -1,0 +1,223 @@
+package manifest_test
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"helmPackageImages/pkg/manifest"
+)
+
+func writeFile(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("writeFile: %v", err)
+	}
+	return path
+}
+
+func TestLoad_MinimalManifest(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "airgap.yaml", `
+crds:
+  - kind: MyOp
+    apiVersion: mygroup.io/v1alpha1
+    imagePaths:
+      - .spec.image
+values:
+  component:
+    enabled: true
+settings:
+  platform: linux/amd64
+  includeChartDependencies: false
+  scrapeValues: true
+`)
+	m, err := manifest.Load(manifest.Options{ChartRoot: dir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(m.CRDs) != 1 || m.CRDs[0].Kind != "MyOp" {
+		t.Errorf("expected 1 CRD with kind MyOp, got %+v", m.CRDs)
+	}
+	if m.Settings.Platform != "linux/amd64" {
+		t.Errorf("expected platform linux/amd64, got %q", m.Settings.Platform)
+	}
+	if m.Settings.IncludeChartDependencies {
+		t.Error("expected includeChartDependencies false")
+	}
+	if !m.Settings.ScrapeValues {
+		t.Error("expected scrapeValues true")
+	}
+}
+
+func TestLoad_MissingManifest_ReturnsDefaults(t *testing.T) {
+	dir := t.TempDir()
+	m, err := manifest.Load(manifest.Options{ChartRoot: dir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(m.CRDs) != 0 {
+		t.Errorf("expected no CRDs, got %v", m.CRDs)
+	}
+	if m.Settings.ScrapeValues {
+		t.Error("expected scrapeValues false by default")
+	}
+	if !m.Settings.IncludeChartDependencies {
+		t.Error("expected includeChartDependencies true by default")
+	}
+}
+
+func TestLoad_ExplicitManifestPath(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFile(t, dir, "custom.yaml", `
+settings:
+  platform: linux/arm64
+`)
+	m, err := manifest.Load(manifest.Options{ManifestPath: path})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.Settings.Platform != "linux/arm64" {
+		t.Errorf("expected linux/arm64, got %q", m.Settings.Platform)
+	}
+}
+
+func TestLoad_ProfileMerge_Settings(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "airgap.yaml", `
+settings:
+  platform: linux/amd64
+  includeChartDependencies: true
+  scrapeValues: false
+profiles:
+  multi-arch:
+    settings:
+      platform: linux/amd64,linux/arm64
+`)
+	m, err := manifest.Load(manifest.Options{ChartRoot: dir, Profile: "multi-arch"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.Settings.Platform != "linux/amd64,linux/arm64" {
+		t.Errorf("expected multi-arch platform, got %q", m.Settings.Platform)
+	}
+	// Non-overridden settings should carry over from base.
+	if !m.Settings.IncludeChartDependencies {
+		t.Error("expected includeChartDependencies true from base")
+	}
+}
+
+func TestLoad_ProfileMerge_Values(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "airgap.yaml", `
+values:
+  component:
+    enabled: true
+  other: foo
+profiles:
+  disable-component:
+    values:
+      component:
+        enabled: false
+`)
+	m, err := manifest.Load(manifest.Options{ChartRoot: dir, Profile: "disable-component"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	comp, ok := m.Values["component"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected component to be a map, got %T", m.Values["component"])
+	}
+	if comp["enabled"] != false {
+		t.Errorf("expected component.enabled=false after profile merge, got %v", comp["enabled"])
+	}
+	// Base key not overridden by profile should remain.
+	if m.Values["other"] != "foo" {
+		t.Errorf("expected other=foo to survive profile merge, got %v", m.Values["other"])
+	}
+}
+
+func TestLoad_ProfileMerge_CRDs_Replaced(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "airgap.yaml", `
+crds:
+  - kind: Base
+    apiVersion: a/v1
+    imagePaths: [.spec.image]
+profiles:
+  no-crds:
+    crds: []
+`)
+	m, err := manifest.Load(manifest.Options{ChartRoot: dir, Profile: "no-crds"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(m.CRDs) != 0 {
+		t.Errorf("expected profile to replace CRDs with empty list, got %v", m.CRDs)
+	}
+}
+
+func TestLoad_ProfileMerge_CRDs_NotApplied_WhenAbsent(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "airgap.yaml", `
+crds:
+  - kind: Base
+    apiVersion: a/v1
+    imagePaths: [.spec.image]
+profiles:
+  settings-only:
+    settings:
+      scrapeValues: true
+`)
+	m, err := manifest.Load(manifest.Options{ChartRoot: dir, Profile: "settings-only"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(m.CRDs) != 1 {
+		t.Errorf("expected base CRDs to be preserved when profile has none, got %v", m.CRDs)
+	}
+}
+
+func TestLoad_CLIOverrides(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "airgap.yaml", `
+settings:
+  platform: linux/amd64
+  scrapeValues: false
+  includeChartDependencies: true
+`)
+	trueVal := true
+	m, err := manifest.Load(manifest.Options{
+		ChartRoot:            dir,
+		OverridePlatform:     "linux/arm64",
+		OverrideScrapeValues: &trueVal,
+		OverrideIncludeDeps:  boolPtr(false),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.Settings.Platform != "linux/arm64" {
+		t.Errorf("expected CLI platform override, got %q", m.Settings.Platform)
+	}
+	if !m.Settings.ScrapeValues {
+		t.Error("expected CLI scrapeValues override to true")
+	}
+	if m.Settings.IncludeChartDependencies {
+		t.Error("expected CLI includeDeps override to false")
+	}
+}
+
+func TestLoad_UnknownProfile_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "airgap.yaml", `
+profiles:
+  real: {}
+`)
+	_, err := manifest.Load(manifest.Options{ChartRoot: dir, Profile: "nonexistent"})
+	if err == nil {
+		t.Error("expected error for unknown profile")
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }

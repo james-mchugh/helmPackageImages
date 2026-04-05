@@ -1,0 +1,7 @@
+apiVersion: mygroup.io/v1alpha1
+kind: MyOperator
+metadata:
+  name: example
+spec:
+  image: example.com/myapp:v2.0.0
+  sidecarImage: example.com/sidecar:v1.1.0

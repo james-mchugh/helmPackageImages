@@ -1,0 +1,4 @@
+apiVersion: v2
+name: with-disabled-component
+description: Chart with an optional component controlled by values
+version: 0.1.0

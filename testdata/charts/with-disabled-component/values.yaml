@@ -1,0 +1,3 @@
+worker:
+  enabled: false
+  image: redis:7.2

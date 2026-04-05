@@ -1,0 +1,4 @@
+apiVersion: v2
+name: with-crds
+description: Chart that uses a custom resource with an image field
+version: 0.1.0

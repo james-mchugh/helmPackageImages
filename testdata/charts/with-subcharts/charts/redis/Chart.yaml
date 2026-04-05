@@ -1,0 +1,4 @@
+apiVersion: v2
+name: redis
+description: Embedded redis subchart for testing
+version: 1.0.0
