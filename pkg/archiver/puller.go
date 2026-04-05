@@ -19,6 +19,10 @@ type PullOptions struct {
 
 	// Keychain is used to authenticate with registries.
 	Keychain authn.Keychain
+
+	// ProgressFunc, if non-nil, is called before each image reference is pulled.
+	// current is the 1-based index of the image being pulled; total is the total count.
+	ProgressFunc func(current, total int, ref string)
 }
 
 // Pull fetches all images for each reference × platform combination.
@@ -31,7 +35,10 @@ func Pull(refs []string, opt PullOptions) (map[string]v1.Image, error) {
 	}
 
 	result := make(map[string]v1.Image)
-	for _, ref := range refs {
+	for i, ref := range refs {
+		if opt.ProgressFunc != nil {
+			opt.ProgressFunc(i+1, len(refs), ref)
+		}
 		tag, err := name.ParseReference(ref, name.WeakValidation)
 		if err != nil {
 			return nil, fmt.Errorf("parsing reference %q: %w", ref, err)
