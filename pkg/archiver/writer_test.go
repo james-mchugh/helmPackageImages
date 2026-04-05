@@ -27,7 +27,7 @@ func TestWrite_SingleImage_ValidOCITar(t *testing.T) {
 	img := makeImage(t)
 	outPath := filepath.Join(t.TempDir(), "images.tar")
 
-	if err := archiver.Write(outPath, map[string]v1.Image{"nginx:1.25.3": img}); err != nil {
+	if err := archiver.Write(outPath, map[string]v1.Image{"nginx:1.25.3": img}, archiver.WriteOptions{}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
@@ -53,7 +53,7 @@ func TestWrite_MultipleImages_AllPresent(t *testing.T) {
 	}
 	outPath := filepath.Join(t.TempDir(), "combined.tar")
 
-	if err := archiver.Write(outPath, images); err != nil {
+	if err := archiver.Write(outPath, images, archiver.WriteOptions{}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
@@ -78,11 +78,34 @@ func TestWrite_CreatesOutputAtPath(t *testing.T) {
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "subdir", "images.tar")
 	// subdir does not exist yet — Write should create it.
-	if err := archiver.Write(outPath, map[string]v1.Image{"myapp:v1": img}); err != nil {
+	if err := archiver.Write(outPath, map[string]v1.Image{"myapp:v1": img}, archiver.WriteOptions{}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	if _, err := os.Stat(outPath); err != nil {
 		t.Fatalf("output file not created: %v", err)
+	}
+}
+
+func TestWrite_DockerFormat_ValidDockerTar(t *testing.T) {
+	images := map[string]v1.Image{
+		"nginx:1.25.3": makeImage(t),
+		"redis:7.2":    makeImage(t),
+	}
+	outPath := filepath.Join(t.TempDir(), "docker.tar")
+
+	if err := archiver.Write(outPath, images, archiver.WriteOptions{Format: archiver.FormatDocker}); err != nil {
+		t.Fatalf("Write (docker): %v", err)
+	}
+
+	entries := tarEntries(t, outPath)
+
+	// Docker tarball must have manifest.json.
+	if !containsPrefix(entries, "manifest.json") {
+		t.Errorf("expected manifest.json in docker tar, got %v", entries)
+	}
+	// Docker tarball must NOT have oci-layout (that would be OCI format).
+	if containsPrefix(entries, "oci-layout") {
+		t.Errorf("unexpected oci-layout in docker tar, got %v", entries)
 	}
 }
 

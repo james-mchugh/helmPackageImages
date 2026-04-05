@@ -12,16 +12,40 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
-// Write pulls all images (already fetched as v1.Image values) into a single
-// OCI image layout and tars the result to outPath.
-// The map key is the image reference string used to annotate the image in the layout.
-func Write(outPath string, images map[string]v1.Image) error {
+// Format specifies the output archive format.
+type Format string
+
+const (
+	// FormatOCI writes an OCI Image Layout tar archive (default).
+	FormatOCI Format = "oci"
+	// FormatDocker writes a Docker-compatible tarball loadable via "docker load".
+	FormatDocker Format = "docker"
+)
+
+// WriteOptions controls how the archive is written.
+type WriteOptions struct {
+	Format Format // default (zero value) is FormatOCI
+}
+
+// Write packages images (already fetched as v1.Image values) into a tar archive
+// at outPath. The map key is the image reference string. Format is controlled by opts.
+func Write(outPath string, images map[string]v1.Image, opts WriteOptions) error {
 	if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
 		return fmt.Errorf("creating output directory: %w", err)
 	}
+	switch opts.Format {
+	case FormatDocker:
+		return writeDockerTar(outPath, images)
+	default: // FormatOCI or ""
+		return writeOCILayout(outPath, images)
+	}
+}
 
+// writeOCILayout writes images as an OCI Image Layout tar archive.
+func writeOCILayout(outPath string, images map[string]v1.Image) error {
 	// Build OCI layout in a temp directory.
 	tmpDir, err := os.MkdirTemp("", "helm-package-images-*")
 	if err != nil {
@@ -48,6 +72,19 @@ func Write(outPath string, images map[string]v1.Image) error {
 
 	// Tar the OCI layout directory.
 	return tarDir(tmpDir, outPath)
+}
+
+// writeDockerTar writes images as a Docker-compatible tarball (docker load format).
+func writeDockerTar(outPath string, images map[string]v1.Image) error {
+	refs := make(map[name.Reference]v1.Image, len(images))
+	for ref, img := range images {
+		r, err := name.ParseReference(ref, name.WeakValidation)
+		if err != nil {
+			return fmt.Errorf("parsing reference %q: %w", ref, err)
+		}
+		refs[r] = img
+	}
+	return tarball.MultiRefWriteToFile(outPath, refs)
 }
 
 // tarDir creates a tar archive of srcDir at dstPath.

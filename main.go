@@ -24,6 +24,7 @@ type options struct {
 	manifestPath string
 	profile      string
 	output       string
+	format       string
 	platform     string
 	dryRun       bool
 	setValues    []string
@@ -54,6 +55,7 @@ to be registered via 'helm repo add' first.`,
 	flags.StringVarP(&opt.profile, "profile", "p", "", "Profile name to activate")
 	flags.StringVarP(&opt.output, "output", "o", "", "Output archive path (required when multiple charts given)")
 	flags.StringVar(&opt.platform, "platform", "", "Comma-separated platforms, e.g. linux/amd64,linux/arm64 (default: current system)")
+	flags.StringVar(&opt.format, "format", "oci", `Output archive format: "oci" (OCI Image Layout) or "docker" (Docker tarball, loadable via docker load)`)
 	flags.BoolVar(&opt.dryRun, "dry-run", false, "List discovered images without pulling or archiving")
 	flags.StringArrayVar(&opt.setValues, "set", nil, "Helm value overrides (may be repeated)")
 	flags.BoolVar(&opt.scrapeValues, "scrape-values", false, "Naively scan values.yaml for image-like strings")
@@ -64,6 +66,9 @@ to be registered via 'helm repo add' first.`,
 func run(charts []string, opt options) error {
 	if len(charts) > 1 && opt.output == "" && !opt.dryRun {
 		return fmt.Errorf("--output is required when multiple charts are specified")
+	}
+	if opt.format != "oci" && opt.format != "docker" {
+		return fmt.Errorf("--format must be \"oci\" or \"docker\", got %q", opt.format)
 	}
 
 	// Resolve CLI-level bool overrides (tri-state: unset = nil).
@@ -117,7 +122,7 @@ func run(charts []string, opt options) error {
 	// Pull images.
 	platform := opt.platform
 	if platform == "" {
-		platform = runtime.GOOS + "/" + runtime.GOARCH
+		platform = "linux/" + runtime.GOARCH
 	}
 	pulled, err := archiver.Pull(allImages, archiver.PullOptions{
 		Platforms: platform,
@@ -128,7 +133,7 @@ func run(charts []string, opt options) error {
 	}
 
 	// Write archive.
-	if err := archiver.Write(outPath, pulled); err != nil {
+	if err := archiver.Write(outPath, pulled, archiver.WriteOptions{Format: archiver.Format(opt.format)}); err != nil {
 		return fmt.Errorf("writing archive: %w", err)
 	}
 	fmt.Printf("Archive written to %s (%d images)\n", outPath, len(pulled))
