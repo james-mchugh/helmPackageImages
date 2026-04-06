@@ -12,20 +12,17 @@ import (
 )
 
 // Fetch resolves a chart reference and returns the loaded chart.
-//
-// Version is specified inline in the reference:
-//   - OCI:       oci://registry/chart:1.2.3  (standard OCI tag, passed through as-is)
-//   - HTTP repo: stable/nginx:1.2.3          (version split off before calling action.Pull)
-//   - Local:     ./my-chart or /path/chart   (no version concept)
-func Fetch(ref string) (*chart.Chart, error) {
-	cleanRef, version := SplitVersion(ref)
-
+func Fetch(ref, version string) (*chart.Chart, error) {
 	cfg := new(action.Configuration)
-	client := action.NewPullWithOpts(action.WithConfig(cfg))
-	client.Settings = cli.New()
+	regClient, err := registry.NewClient()
+	if err != nil {
+		return nil, err
+	}
+	cfg.RegistryClient = regClient
+	client := action.NewInstall(cfg)
 	client.Version = version
 
-	chartPath, err := client.ChartPathOptions.LocateChart(cleanRef, client.Settings)
+	chartPath, err := client.LocateChart(ref, cli.New())
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate chart: %w", err)
 	}
