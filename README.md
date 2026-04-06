@@ -60,12 +60,6 @@ helm package-images bitnami/nginx
 helm package-images oci://registry-1.docker.io/bitnamicharts/nginx
 ```
 
-### Multiple charts into one archive
-
-```bash
-helm package-images ./frontend ./backend -o all-images.tar
-```
-
 ### Dry run — list images without pulling
 
 ```bash
@@ -129,16 +123,16 @@ profiles:
 
 ## Flags
 
-| Flag              | Default                    | Description                                                          |
-|-------------------|----------------------------|----------------------------------------------------------------------|
-| `-m, --manifest`  | `<chart-root>/airgap.yaml` | Path to airgap.yaml                                                  |
-| `-p, --profile`   | —                          | Profile name to activate                                             |
-| `-o, --output`    | `<chart-name>.tar`         | Output archive path (required for multiple charts)                   |
+| Flag              | Default                    | Description                                                         |
+|-------------------|----------------------------|---------------------------------------------------------------------|
+| `-m, --manifest`  | `<chart-root>/airgap.yaml` | Path to airgap.yaml                                                 |
+| `-p, --profile`   | —                          | Profile name to activate                                            |
+| `-o, --output`    | `<chart-name>.tar`         | Output archive path                   |
 | `--format`        | `oci`                      | Output format: `oci` (OCI Image Layout) or `docker` (Docker tarball) |
-| `--platform`      | current system             | Comma-separated platforms, e.g. `linux/amd64,linux/arm64`            |
-| `--dry-run`       | `false`                    | Print discovered image references without pulling                    |
-| `--set`           | —                          | Helm value overrides, e.g. `--set image.tag=v2` (repeatable)         |
-| `--scrape-values` | `false`                    | Heuristically scan `values.yaml` for image-like strings              |
+| `--platform`      | current system             | Comma-separated platforms, e.g. `linux/amd64,linux/arm64`           |
+| `--dry-run`       | `false`                    | Print discovered image references without pulling                   |
+| `--set`           | —                          | Helm value overrides, e.g. `--set image.tag=v2` (repeatable)        |
+| `--scrape-values` | `false`                    | Heuristically scan `values.yaml` for image-like strings             |
 
 ## Transferring to an air-gapped environment
 
