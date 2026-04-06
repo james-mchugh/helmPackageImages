@@ -40,9 +40,8 @@ func imageDiscoveryPipeline(t *testing.T, chartRef string, manifestOpts manifest
 
 	// Render chart.
 	docs, err := helmrender.Render(helmrender.RenderOptions{
-		Chart:                    chrt,
-		Values:                   m.Values,
-		IncludeChartDependencies: m.Settings.IncludeChartDependencies,
+		Chart:  chrt,
+		Values: m.Values,
 	})
 	if err != nil {
 		t.Fatalf("helm.Render: %v", err)
@@ -112,8 +111,8 @@ crds:
   - kind: MyOperator
     apiVersion: mygroup.io/v1alpha1
     imagePaths:
-      - .spec.image
-      - .spec.sidecarImage
+      - "{.spec.image}"
+      - "{.spec.sidecarImage}"
 `)
 	imgs := imageDiscoveryPipeline(t, chartPath("with-crds"),
 		manifest.Options{ManifestPath: filepath.Join(dir, "airgap.yaml")},
