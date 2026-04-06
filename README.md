@@ -115,8 +115,8 @@ crds:
   - kind: MyApp
     apiVersion: example.com/v1
     imagePaths:
-      - .spec.image
-      - .spec.sidecar.image
+      - "{.spec.image}"
+      - "{.spec.sidecar.image}"
 
 # Named profiles — override base settings for specific environments.
 profiles:
