@@ -45,9 +45,6 @@ settings:
 	if m.Settings.Platform != "linux/amd64" {
 		t.Errorf("expected platform linux/amd64, got %q", m.Settings.Platform)
 	}
-	if m.Settings.IncludeChartDependencies {
-		t.Error("expected includeChartDependencies false")
-	}
 	if !m.Settings.ScrapeValues {
 		t.Error("expected scrapeValues true")
 	}
@@ -63,9 +60,6 @@ func TestLoad_MissingManifest_ReturnsDefaults(t *testing.T) {
 	}
 	if m.Settings.ScrapeValues {
 		t.Error("expected scrapeValues false by default")
-	}
-	if !m.Settings.IncludeChartDependencies {
-		t.Error("expected includeChartDependencies true by default")
 	}
 }
 
@@ -103,10 +97,6 @@ profiles:
 	}
 	if m.Settings.Platform != "linux/amd64,linux/arm64" {
 		t.Errorf("expected multi-arch platform, got %q", m.Settings.Platform)
-	}
-	// Non-overridden settings should carry over from base.
-	if !m.Settings.IncludeChartDependencies {
-		t.Error("expected includeChartDependencies true from base")
 	}
 }
 
@@ -195,7 +185,6 @@ settings:
 `),
 		OverridePlatform:     "linux/arm64",
 		OverrideScrapeValues: &trueVal,
-		OverrideIncludeDeps:  boolPtr(false),
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -205,9 +194,6 @@ settings:
 	}
 	if !m.Settings.ScrapeValues {
 		t.Error("expected CLI scrapeValues override to true")
-	}
-	if m.Settings.IncludeChartDependencies {
-		t.Error("expected CLI includeDeps override to false")
 	}
 }
 

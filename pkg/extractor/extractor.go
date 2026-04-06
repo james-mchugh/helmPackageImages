@@ -4,11 +4,13 @@ import (
 	"sort"
 
 	"helmPackageImages/pkg/manifest"
+
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // Extract discovers all container image references from rendered YAML documents
 // using all configured sources, deduplicates them, and returns a sorted slice.
-func Extract(docs []string, m *manifest.Manifest) ([]string, error) {
+func Extract(docs []runtime.Object, m *manifest.Manifest) ([]string, error) {
 	seen := map[string]struct{}{}
 
 	// 1. Built-in workload types.

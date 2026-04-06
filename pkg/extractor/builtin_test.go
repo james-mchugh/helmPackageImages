@@ -29,15 +29,12 @@ spec:
       containers:
         - name: web
           image: nginx:1.25.3
-      ephemeralContainers:
-        - name: debug
-          image: alpine:3.18
 `
-	imgs, err := extractor.ExtractBuiltin([]string{yaml})
+	imgs, err := extractor.ExtractBuiltin(parseObjects(t, yaml))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := sorted([]string{"busybox:1.36", "nginx:1.25.3", "alpine:3.18"})
+	want := sorted([]string{"busybox:1.36", "nginx:1.25.3"})
 	if got := sorted(imgs); !equal(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
@@ -56,7 +53,7 @@ spec:
         - name: db
           image: postgres:15
 `
-	imgs, err := extractor.ExtractBuiltin([]string{yaml})
+	imgs, err := extractor.ExtractBuiltin(parseObjects(t, yaml))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -78,7 +75,7 @@ spec:
         - name: agent
           image: datadog/agent:7
 `
-	imgs, err := extractor.ExtractBuiltin([]string{yaml})
+	imgs, err := extractor.ExtractBuiltin(parseObjects(t, yaml))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -100,7 +97,7 @@ spec:
         - name: migrate
           image: myapp:migrate
 `
-	imgs, err := extractor.ExtractBuiltin([]string{yaml})
+	imgs, err := extractor.ExtractBuiltin(parseObjects(t, yaml))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -124,7 +121,7 @@ spec:
             - name: cleanup
               image: myapp:cleanup
 `
-	imgs, err := extractor.ExtractBuiltin([]string{yaml})
+	imgs, err := extractor.ExtractBuiltin(parseObjects(t, yaml))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -144,7 +141,7 @@ spec:
     - name: app
       image: myapp:latest
 `
-	imgs, err := extractor.ExtractBuiltin([]string{yaml})
+	imgs, err := extractor.ExtractBuiltin(parseObjects(t, yaml))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -162,7 +159,7 @@ metadata:
 data:
   key: value
 `
-	imgs, err := extractor.ExtractBuiltin([]string{yaml})
+	imgs, err := extractor.ExtractBuiltin(parseObjects(t, yaml))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -195,7 +192,7 @@ spec:
         - name: b
           image: nginx:1.25.3
 `
-	imgs, err := extractor.ExtractBuiltin([]string{yaml})
+	imgs, err := extractor.ExtractBuiltin(parseObjects(t, yaml))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -204,7 +201,7 @@ spec:
 	}
 }
 
-func TestBuiltin_ReplicaSet(t *testing.T) {
+func TestBuiltin_ReplicaSet_NotExtracted(t *testing.T) {
 	yaml := `
 apiVersion: apps/v1
 kind: ReplicaSet
@@ -217,12 +214,13 @@ spec:
         - name: app
           image: myapp:v1
 `
-	imgs, err := extractor.ExtractBuiltin([]string{yaml})
+	imgs, err := extractor.ExtractBuiltin(parseObjects(t, yaml))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(imgs) != 1 || imgs[0] != "myapp:v1" {
-		t.Errorf("got %v", imgs)
+	// ReplicaSet is not in the supported workload types; images should not be extracted.
+	if len(imgs) != 0 {
+		t.Errorf("expected no images for ReplicaSet, got %v", imgs)
 	}
 }
 

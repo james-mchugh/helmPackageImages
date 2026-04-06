@@ -1,29 +1,62 @@
 package helm_test
 
 import (
-	"strings"
 	"testing"
 
+	"helmPackageImages/pkg/extractor"
 	helmrender "helmPackageImages/pkg/helm"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 )
+
+// extractImages returns all images from built-in workload objects.
+func extractImages(t *testing.T, objs []runtime.Object) []string {
+	t.Helper()
+	imgs, err := extractor.ExtractBuiltin(objs)
+	if err != nil {
+		t.Fatalf("ExtractBuiltin: %v", err)
+	}
+	return imgs
+}
+
+func containsImage(imgs []string, img string) bool {
+	for _, i := range imgs {
+		if i == img {
+			return true
+		}
+	}
+	return false
+}
+
+func hasKind(objs []runtime.Object, kind string) bool {
+	for _, obj := range objs {
+		if u, ok := obj.(*unstructured.Unstructured); ok {
+			if u.GetKind() == kind {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 func TestRender_SimpleChart(t *testing.T) {
 	chrt, err := helmrender.Fetch(chartPath("simple"))
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
-	docs, err := helmrender.Render(helmrender.RenderOptions{Chart: chrt})
+	objs, err := helmrender.Render(helmrender.RenderOptions{Chart: chrt})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(docs) == 0 {
-		t.Fatal("expected at least one rendered document")
+	if len(objs) == 0 {
+		t.Fatal("expected at least one rendered object")
 	}
-	combined := strings.Join(docs, "\n")
-	if !strings.Contains(combined, "nginx:1.25.3") {
+	imgs := extractImages(t, objs)
+	if !containsImage(imgs, "nginx:1.25.3") {
 		t.Error("expected nginx:1.25.3 in rendered output")
 	}
-	if !strings.Contains(combined, "busybox:1.36") {
+	if !containsImage(imgs, "busybox:1.36") {
 		t.Error("expected busybox:1.36 in rendered output")
 	}
 }
@@ -33,15 +66,15 @@ func TestRender_DisabledComponentExcluded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
-	docs, err := helmrender.Render(helmrender.RenderOptions{Chart: chrt})
+	objs, err := helmrender.Render(helmrender.RenderOptions{Chart: chrt})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	combined := strings.Join(docs, "\n")
-	if strings.Contains(combined, "redis:7.2") {
+	imgs := extractImages(t, objs)
+	if containsImage(imgs, "redis:7.2") {
 		t.Error("expected redis:7.2 to be absent when worker.enabled=false")
 	}
-	if !strings.Contains(combined, "nginx:1.25.3") {
+	if !containsImage(imgs, "nginx:1.25.3") {
 		t.Error("expected nginx:1.25.3 to be present")
 	}
 }
@@ -51,7 +84,7 @@ func TestRender_ValuesEnable_HiddenComponent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
-	docs, err := helmrender.Render(helmrender.RenderOptions{
+	objs, err := helmrender.Render(helmrender.RenderOptions{
 		Chart: chrt,
 		Values: map[string]interface{}{
 			"worker": map[string]interface{}{
@@ -62,8 +95,8 @@ func TestRender_ValuesEnable_HiddenComponent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	combined := strings.Join(docs, "\n")
-	if !strings.Contains(combined, "redis:7.2") {
+	imgs := extractImages(t, objs)
+	if !containsImage(imgs, "redis:7.2") {
 		t.Error("expected redis:7.2 after enabling worker")
 	}
 }
@@ -73,45 +106,50 @@ func TestRender_SetOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
-	docs, err := helmrender.Render(helmrender.RenderOptions{
+	objs, err := helmrender.Render(helmrender.RenderOptions{
 		Chart:     chrt,
 		SetValues: []string{"worker.enabled=true"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	combined := strings.Join(docs, "\n")
-	if !strings.Contains(combined, "redis:7.2") {
+	imgs := extractImages(t, objs)
+	if !containsImage(imgs, "redis:7.2") {
 		t.Error("expected redis:7.2 after --set worker.enabled=true")
 	}
 }
 
-func TestRender_ExcludeDependencies(t *testing.T) {
+func TestRender_DependencyDisabledViaValues(t *testing.T) {
 	chrt, err := helmrender.Fetch(chartPath("with-subcharts"))
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
-	docs, err := helmrender.Render(helmrender.RenderOptions{
-		Chart:                    chrt,
-		IncludeChartDependencies: false,
+	// Explicitly disable the redis subchart via its condition value.
+	objs, err := helmrender.Render(helmrender.RenderOptions{
+		Chart: chrt,
+		Values: map[string]interface{}{
+			"redis": map[string]interface{}{
+				"enabled": false,
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	combined := strings.Join(docs, "\n")
-	if strings.Contains(combined, "redis:7.2") {
-		t.Error("expected redis:7.2 absent when dependencies excluded")
+	imgs := extractImages(t, objs)
+	if containsImage(imgs, "redis:7.2") {
+		t.Error("expected redis:7.2 absent when redis.enabled=false")
 	}
 }
 
-func TestRender_IncludeDependencies(t *testing.T) {
+func TestRender_DependencyEnabledViaValues(t *testing.T) {
 	chrt, err := helmrender.Fetch(chartPath("with-subcharts"))
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
-	docs, err := helmrender.Render(helmrender.RenderOptions{
-		Chart:                    chrt,
-		IncludeChartDependencies: true,
+	// Enable the redis subchart via its condition value.
+	objs, err := helmrender.Render(helmrender.RenderOptions{
+		Chart: chrt,
 		Values: map[string]interface{}{
 			"redis": map[string]interface{}{
 				"enabled": true,
@@ -121,9 +159,9 @@ func TestRender_IncludeDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	combined := strings.Join(docs, "\n")
-	if !strings.Contains(combined, "redis:7.2") {
-		t.Error("expected redis:7.2 when dependencies included and enabled")
+	imgs := extractImages(t, objs)
+	if !containsImage(imgs, "redis:7.2") {
+		t.Error("expected redis:7.2 when redis.enabled=true")
 	}
 }
 
@@ -132,12 +170,11 @@ func TestRender_CustomResourcePresent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
-	docs, err := helmrender.Render(helmrender.RenderOptions{Chart: chrt})
+	objs, err := helmrender.Render(helmrender.RenderOptions{Chart: chrt})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	combined := strings.Join(docs, "\n")
-	if !strings.Contains(combined, "MyOperator") {
+	if !hasKind(objs, "MyOperator") {
 		t.Error("expected custom resource MyOperator in rendered output")
 	}
 }

@@ -6,10 +6,11 @@ import (
 
 	"helmPackageImages/pkg/extractor"
 	"helmPackageImages/pkg/manifest"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 )
 
 func TestExtract_AllSources(t *testing.T) {
-	docs := []string{`
+	yaml := `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -27,7 +28,7 @@ metadata:
   name: op
 spec:
   image: example.com/op:v1
-`}
+`
 	values := map[string]interface{}{
 		"image": map[string]interface{}{
 			"repository": "redis",
@@ -36,14 +37,17 @@ spec:
 	}
 	m := &manifest.Manifest{
 		CRDs: []manifest.CRDEntry{
-			{Kind: "MyOperator", APIVersion: "mygroup.io/v1alpha1", ImagePaths: []string{".spec.image"}},
+			{
+				TypeMeta:   k8sruntime.TypeMeta{Kind: "MyOperator", APIVersion: "mygroup.io/v1alpha1"},
+				ImagePaths: []string{"{.spec.image}"},
+			},
 		},
 		Values: values,
 		Settings: manifest.Settings{
 			ScrapeValues: true,
 		},
 	}
-	imgs, err := extractor.Extract(docs, m)
+	imgs, err := extractor.Extract(parseObjects(t, yaml), m)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -56,7 +60,7 @@ spec:
 }
 
 func TestExtract_Deduplication(t *testing.T) {
-	docs := []string{`
+	yaml := `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -67,7 +71,7 @@ spec:
       containers:
         - name: a
           image: nginx:1.25.3
-`}
+`
 	values := map[string]interface{}{
 		"image": "nginx:1.25.3",
 	}
@@ -75,7 +79,7 @@ spec:
 		Values:   values,
 		Settings: manifest.Settings{ScrapeValues: true},
 	}
-	imgs, err := extractor.Extract(docs, m)
+	imgs, err := extractor.Extract(parseObjects(t, yaml), m)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -85,7 +89,6 @@ spec:
 }
 
 func TestExtract_ScrapeValuesDisabled(t *testing.T) {
-	docs := []string{}
 	values := map[string]interface{}{
 		"image": "nginx:1.25.3",
 	}
@@ -93,7 +96,7 @@ func TestExtract_ScrapeValuesDisabled(t *testing.T) {
 		Values:   values,
 		Settings: manifest.Settings{ScrapeValues: false},
 	}
-	imgs, err := extractor.Extract(docs, m)
+	imgs, err := extractor.Extract(nil, m)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -103,16 +106,16 @@ func TestExtract_ScrapeValuesDisabled(t *testing.T) {
 }
 
 func TestExtract_NoCRDs_SkipsCustomExtractor(t *testing.T) {
-	docs := []string{`
+	yaml := `
 apiVersion: mygroup.io/v1alpha1
 kind: MyOperator
 spec:
   image: example.com/op:v1
-`}
+`
 	m := &manifest.Manifest{
 		CRDs: nil,
 	}
-	imgs, err := extractor.Extract(docs, m)
+	imgs, err := extractor.Extract(parseObjects(t, yaml), m)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -122,7 +125,7 @@ spec:
 }
 
 func TestExtract_ResultIsSorted(t *testing.T) {
-	docs := []string{`
+	yaml := `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -135,9 +138,9 @@ spec:
           image: zz-image:1
         - name: a
           image: aa-image:1
-`}
+`
 	m := &manifest.Manifest{}
-	imgs, err := extractor.Extract(docs, m)
+	imgs, err := extractor.Extract(parseObjects(t, yaml), m)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

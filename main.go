@@ -28,7 +28,6 @@ type options struct {
 	platform     string
 	dryRun       bool
 	setValues    []string
-	includeDeps  bool
 	scrapeValues bool
 	verbose      bool
 }
@@ -55,8 +54,18 @@ to be registered via 'helm repo add' first.`,
 	flags.StringVarP(&opt.manifestPath, "manifest", "m", "", "Path to airgap.yaml (default: <chart-root>/airgap.yaml)")
 	flags.StringVarP(&opt.profile, "profile", "p", "", "Profile name to activate")
 	flags.StringVarP(&opt.output, "output", "o", "", "Output archive path (required when multiple charts given)")
-	flags.StringVar(&opt.platform, "platform", "", "Comma-separated platforms, e.g. linux/amd64,linux/arm64 (default: current system)")
-	flags.StringVar(&opt.format, "format", "oci", `Output archive format: "oci" (OCI Image Layout) or "docker" (Docker tarball, loadable via docker load)`)
+	flags.StringVar(
+		&opt.platform,
+		"platform",
+		"",
+		"Comma-separated platforms, e.g. linux/amd64,linux/arm64 (default: current system)",
+	)
+	flags.StringVar(
+		&opt.format,
+		"format",
+		"oci",
+		`Output archive format: "oci" (OCI Image Layout) or "docker" (Docker tarball, loadable via docker load)`,
+	)
 	flags.BoolVar(&opt.dryRun, "dry-run", false, "List discovered images without pulling or archiving")
 	flags.StringArrayVar(&opt.setValues, "set", nil, "Helm value overrides (may be repeated)")
 	flags.BoolVar(&opt.scrapeValues, "scrape-values", false, "Naively scan values.yaml for image-like strings")
@@ -147,13 +156,15 @@ func run(charts []string, opt options) error {
 		platform = "linux/" + runtime.GOARCH
 	}
 	logf("Pulling %d unique image(s) for platform %s...", len(allImages), platform)
-	pulled, err := archiver.Pull(allImages, archiver.PullOptions{
-		Platforms: platform,
-		Keychain:  kc,
-		ProgressFunc: func(current, total int, ref string) {
-			logf("  [%d/%d] %s", current, total, ref)
+	pulled, err := archiver.Pull(
+		allImages, archiver.PullOptions{
+			Platforms: platform,
+			Keychain:  kc,
+			ProgressFunc: func(current, total int, ref string) {
+				logf("  [%d/%d] %s", current, total, ref)
+			},
 		},
-	})
+	)
 	if err != nil {
 		return fmt.Errorf("pulling images: %w", err)
 	}
@@ -167,7 +178,12 @@ func run(charts []string, opt options) error {
 	return nil
 }
 
-func processChart(ref string, opt options, overrideScrapeValues *bool, verbf func(string, ...any)) (string, []string, error) {
+func processChart(
+	ref string,
+	opt options,
+	overrideScrapeValues *bool,
+	verbf func(string, ...any),
+) (string, []string, error) {
 	// Fetch chart (local path, OCI, or HTTP repo).
 	// Version is specified inline in the ref: stable/nginx:1.2.3 or oci://reg/chart:tag.
 	verbf("  Fetching chart %q...", ref)
@@ -179,25 +195,28 @@ func processChart(ref string, opt options, overrideScrapeValues *bool, verbf fun
 	// Load manifest — ChartRoot is only meaningful for local/HTTP repo charts.
 	// For OCI in-memory charts, chartRoot is empty and --manifest must be used explicitly.
 	verbf("  Loading manifest for %q...", chrt.Name())
-	m, err := manifest.Load(manifest.Options{
-		ManifestPath:         opt.manifestPath,
-		Profile:              opt.profile,
-		Chart:                chrt,
-		OverridePlatform:     opt.platform,
-		OverrideScrapeValues: overrideScrapeValues,
-	})
+	m, err := manifest.Load(
+		manifest.Options{
+			ManifestPath:         opt.manifestPath,
+			Profile:              opt.profile,
+			Chart:                chrt,
+			OverridePlatform:     opt.platform,
+			OverrideScrapeValues: overrideScrapeValues,
+		},
+	)
 	if err != nil {
 		return "", nil, fmt.Errorf("loading manifest: %w", err)
 	}
 
 	// Render chart.
 	verbf("  Rendering templates for %q...", chrt.Name())
-	docs, err := helmrender.Render(helmrender.RenderOptions{
-		Chart:                    chrt,
-		Values:                   m.Values,
-		SetValues:                opt.setValues,
-		IncludeChartDependencies: m.Settings.IncludeChartDependencies,
-	})
+	docs, err := helmrender.Render(
+		helmrender.RenderOptions{
+			Chart:     chrt,
+			Values:    m.Values,
+			SetValues: opt.setValues,
+		},
+	)
 	if err != nil {
 		return "", nil, fmt.Errorf("rendering chart: %w", err)
 	}

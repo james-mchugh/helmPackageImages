@@ -2,12 +2,18 @@ package helm
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/engine"
 	"helm.sh/helm/v3/pkg/strvals"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/kubectl/pkg/scheme"
 )
 
 // RenderOptions controls how a chart is rendered.
@@ -15,29 +21,38 @@ type RenderOptions struct {
 	// Chart is the loaded Helm chart to render. Obtain it via Fetch.
 	Chart *chart.Chart
 
-	// Values are deep-merged over the chart's default values.yaml.
+	// Values are user-supplied overrides. Chart default values are merged by
+	// ToRenderValues during rendering; these are applied on top of those defaults.
 	Values map[string]interface{}
 
 	// SetValues are --set style overrides applied after Values.
 	SetValues []string
-
-	// IncludeChartDependencies controls whether subchart templates are rendered.
-	// When false, subcharts are removed from the chart before rendering.
-	IncludeChartDependencies bool
 }
 
-// Render renders the chart, returning non-empty YAML documents.
-func Render(opt RenderOptions) ([]string, error) {
+// Render renders the chart, returning Kubernetes objects.
+func Render(opt RenderOptions) ([]runtime.Object, error) {
 	if opt.Chart == nil {
 		return nil, fmt.Errorf("Render: Chart must not be nil")
 	}
 	chrt := opt.Chart
 
-	if !opt.IncludeChartDependencies {
-		chrt = stripDependencies(chrt)
+	// ProcessDependenciesWithMerge must receive raw user values (not the wrapped
+	// render values from ToRenderValues) so that condition paths like "redis.enabled"
+	// resolve correctly against the top-level map. ToRenderValues is called after,
+	// which merges chart defaults internally.
+	rawVals, err := buildValues(opt)
+	if err != nil {
+		return nil, err
 	}
 
-	vals, err := buildValues(chrt, opt)
+	if err := chartutil.ProcessDependenciesWithMerge(chrt, rawVals); err != nil {
+		return nil, err
+	}
+
+	vals, err := chartutil.ToRenderValues(chrt, rawVals, chartutil.ReleaseOptions{
+		Name:      chrt.Name(),
+		Namespace: "default",
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -47,25 +62,27 @@ func Render(opt RenderOptions) ([]string, error) {
 		return nil, fmt.Errorf("rendering chart: %w", err)
 	}
 
-	var docs []string
-	for _, content := range rendered {
-		content = strings.TrimSpace(content)
-		if content != "" && content != "---" {
-			docs = append(docs, content)
+	var objs []runtime.Object
+	for filename, content := range rendered {
+		if !(strings.HasSuffix(filename, ".yml") || strings.HasSuffix(filename, ".yaml")) {
+			continue
 		}
+		renderedObjs, err := decodeObjects(content)
+		if err != nil {
+			return nil, err
+		}
+		objs = append(objs, renderedObjs...)
 	}
-	return docs, nil
+	return objs, nil
 }
 
-// buildValues merges chart defaults, manifest values, and --set overrides.
-func buildValues(chrt *chart.Chart, opt RenderOptions) (chartutil.Values, error) {
-	base := chrt.Values
-	if base == nil {
-		base = map[string]interface{}{}
+// buildValues assembles the raw user-supplied values from opt.Values and --set overrides.
+// Chart default values are NOT merged here; ToRenderValues handles that internally.
+func buildValues(opt RenderOptions) (map[string]interface{}, error) {
+	base := make(map[string]interface{})
+	for k, v := range opt.Values {
+		base[k] = v
 	}
-
-	// Deep-merge manifest values over chart defaults.
-	deepMerge(base, opt.Values)
 
 	// Apply --set overrides.
 	for _, s := range opt.SetValues {
@@ -74,33 +91,58 @@ func buildValues(chrt *chart.Chart, opt RenderOptions) (chartutil.Values, error)
 		}
 	}
 
-	return chartutil.ToRenderValues(chrt, base, chartutil.ReleaseOptions{
-		Name:      chrt.Name(),
-		Namespace: "default",
-	}, nil)
+	return base, nil
 }
 
-// deepMerge merges src into dst recursively. Map values are merged; others are replaced.
-func deepMerge(dst, src map[string]interface{}) {
-	for k, sv := range src {
-		dv, exists := dst[k]
-		if !exists {
-			dst[k] = sv
+// decodeObjects splits a multi-document YAML string and decodes each document
+// into a typed runtime.Object. Unknown/CRD types fall back to *unstructured.Unstructured.
+func decodeObjects(data string) ([]runtime.Object, error) {
+	decoder := serializer.NewCodecFactory(scheme.Scheme).UniversalDeserializer()
+
+	var objs []runtime.Object
+
+	splitter := yaml.NewYAMLOrJSONDecoder(strings.NewReader(data), 4096)
+
+	for {
+		raw := runtime.RawExtension{}
+		if err := splitter.Decode(&raw); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("decoding YAML: %w", err)
+		}
+
+		if raw.Raw == nil {
 			continue
 		}
-		dsm, dstIsMap := dv.(map[string]interface{})
-		ssm, srcIsMap := sv.(map[string]interface{})
-		if dstIsMap && srcIsMap {
-			deepMerge(dsm, ssm)
-		} else {
-			dst[k] = sv
+
+		obj, err := decodeOne(decoder, raw.Raw)
+		if err != nil {
+			return nil, err
 		}
+
+		objs = append(objs, obj)
 	}
+
+	return objs, nil
 }
 
-// stripDependencies returns a shallow copy of chrt with no subcharts.
-func stripDependencies(chrt *chart.Chart) *chart.Chart {
-	copy := *chrt
-	copy.SetDependencies()
-	return &copy
+// decodeOne decodes a single raw JSON/YAML document. If the type is not registered
+// in the scheme (e.g. a CRD), it falls back to *unstructured.Unstructured.
+func decodeOne(decoder runtime.Decoder, raw []byte) (runtime.Object, error) {
+	obj, _, err := decoder.Decode(raw, nil, nil)
+	if err == nil {
+		return obj, nil
+	}
+
+	if !runtime.IsNotRegisteredError(err) {
+		return nil, err
+	}
+
+	// Type not registered in the scheme (e.g. a custom resource) — decode as unstructured.
+	u := &unstructured.Unstructured{}
+	if err := yaml.Unmarshal(raw, u); err != nil {
+		return nil, fmt.Errorf("decoding YAML: %w", err)
+	}
+	return u, nil
 }
