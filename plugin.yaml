@@ -1,5 +1,5 @@
 name: "package-images"
-version: "0.1.0"
+version: "0.2.0"
 usage: "Package container images from a Helm chart into an OCI or Docker archive"
 description: |-
   Renders one or more Helm charts, discovers all container image references,
