@@ -6,6 +6,7 @@ import (
 	"runtime"
 
 	"github.com/spf13/cobra"
+	"helm.sh/helm/v3/pkg/chart"
 
 	"helmPackageImages/pkg/archiver"
 	"helmPackageImages/pkg/auth"
@@ -30,21 +31,22 @@ type options struct {
 	setValues    []string
 	scrapeValues bool
 	verbose      bool
+	version      string
 }
 
 func newRootCmd() *cobra.Command {
 	var opt options
 
 	cmd := &cobra.Command{
-		Use:   "helm package-images [chart...]",
+		Use:   "helm package-images [chart]",
 		Short: "Package container images from a Helm chart into an OCI archive",
-		Long: `Renders one or more Helm charts, discovers all container image references,
+		Long: `Renders a Helm charts, discovers all container image references,
 pulls them, and packages them into an OCI-compatible tar archive for transfer
 to air-gapped environments.
 
 Remote charts (e.g. stable/nginx, oci://registry/chart) require the repository
 to be registered via 'helm repo add' first.`,
-		Args: cobra.MinimumNArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(args, opt)
 		},
@@ -54,6 +56,7 @@ to be registered via 'helm repo add' first.`,
 	flags.StringVarP(&opt.manifestPath, "manifest", "m", "", "Path to airgap.yaml (default: <chart-root>/airgap.yaml)")
 	flags.StringVarP(&opt.profile, "profile", "p", "", "Profile name to activate")
 	flags.StringVarP(&opt.output, "output", "o", "", "Output archive path (required when multiple charts given)")
+	flags.StringVar(&opt.version, "version", "", "Version of the chart")
 	flags.StringVar(
 		&opt.platform,
 		"platform",
@@ -75,9 +78,8 @@ to be registered via 'helm repo add' first.`,
 }
 
 func run(charts []string, opt options) error {
-	if len(charts) > 1 && opt.output == "" && !opt.dryRun {
-		return fmt.Errorf("--output is required when multiple charts are specified")
-	}
+	// Only one ref is allowed
+	ref := charts[0]
 	if opt.format != "oci" && opt.format != "docker" {
 		return fmt.Errorf("--format must be \"oci\" or \"docker\", got %q", opt.format)
 	}
@@ -100,27 +102,16 @@ func run(charts []string, opt options) error {
 	}
 
 	seen := map[string]struct{}{}
-	var firstName string
+	logf("Processing ref %q...", ref)
 
-	total := len(charts)
-	for i, ref := range charts {
-		if total > 1 {
-			logf("[%d/%d] Processing chart %q...", i+1, total, ref)
-		} else {
-			logf("Processing chart %q...", ref)
-		}
+	chart, imgs, err := processChart(ref, opt, overrideScrapeValues, verbf)
+	if err != nil {
+		return fmt.Errorf("ref %q: %w", ref, err)
+	}
 
-		name, imgs, err := processChart(ref, opt, overrideScrapeValues, verbf)
-		if err != nil {
-			return fmt.Errorf("chart %q: %w", ref, err)
-		}
-		if firstName == "" {
-			firstName = name
-		}
-		verbf("  Found %d image(s) in chart %q", len(imgs), name)
-		for _, img := range imgs {
-			seen[img] = struct{}{}
-		}
+	verbf("  Found %d image(s) in ref %q", len(imgs), chart)
+	for _, img := range imgs {
+		seen[img] = struct{}{}
 	}
 
 	var allImages []string
@@ -139,8 +130,8 @@ func run(charts []string, opt options) error {
 	// Determine output path.
 	outPath := opt.output
 	if outPath == "" {
-		// Single chart — use the chart's own name from Chart.yaml.
-		outPath = firstName + ".tar"
+		// Single ref — use the ref's own chart from Chart.yaml.
+		outPath = fmt.Sprintf("%s-%s.images.tar", chart.Metadata.Name, chart.Metadata.Version)
 	}
 
 	// Resolve auth keychain.
@@ -183,13 +174,13 @@ func processChart(
 	opt options,
 	overrideScrapeValues *bool,
 	verbf func(string, ...any),
-) (string, []string, error) {
+) (*chart.Chart, []string, error) {
 	// Fetch chart (local path, OCI, or HTTP repo).
 	// Version is specified inline in the ref: stable/nginx:1.2.3 or oci://reg/chart:tag.
 	verbf("  Fetching chart %q...", ref)
-	chrt, err := helmrender.Fetch(ref)
+	chrt, err := helmrender.Fetch(ref, opt.version)
 	if err != nil {
-		return "", nil, fmt.Errorf("fetching chart: %w", err)
+		return nil, nil, fmt.Errorf("fetching chart: %w", err)
 	}
 
 	// Load manifest — ChartRoot is only meaningful for local/HTTP repo charts.
@@ -205,7 +196,7 @@ func processChart(
 		},
 	)
 	if err != nil {
-		return "", nil, fmt.Errorf("loading manifest: %w", err)
+		return nil, nil, fmt.Errorf("loading manifest: %w", err)
 	}
 
 	// Render chart.
@@ -218,11 +209,11 @@ func processChart(
 		},
 	)
 	if err != nil {
-		return "", nil, fmt.Errorf("rendering chart: %w", err)
+		return nil, nil, fmt.Errorf("rendering chart: %w", err)
 	}
 
 	// Extract images.
 	verbf("  Extracting image references from %q...", chrt.Name())
 	imgs, err := extractor.Extract(docs, m)
-	return chrt.Name(), imgs, err
+	return chrt, imgs, err
 }

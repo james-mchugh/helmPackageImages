@@ -41,7 +41,7 @@ func hasKind(objs []runtime.Object, kind string) bool {
 }
 
 func TestRender_SimpleChart(t *testing.T) {
-	chrt, err := helmrender.Fetch(chartPath("simple"))
+	chrt, err := helmrender.Fetch(chartPath("simple"), "")
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestRender_SimpleChart(t *testing.T) {
 }
 
 func TestRender_DisabledComponentExcluded(t *testing.T) {
-	chrt, err := helmrender.Fetch(chartPath("with-disabled-component"))
+	chrt, err := helmrender.Fetch(chartPath("with-disabled-component"), "")
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestRender_DisabledComponentExcluded(t *testing.T) {
 }
 
 func TestRender_ValuesEnable_HiddenComponent(t *testing.T) {
-	chrt, err := helmrender.Fetch(chartPath("with-disabled-component"))
+	chrt, err := helmrender.Fetch(chartPath("with-disabled-component"), "")
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestRender_ValuesEnable_HiddenComponent(t *testing.T) {
 }
 
 func TestRender_SetOverrides(t *testing.T) {
-	chrt, err := helmrender.Fetch(chartPath("with-disabled-component"))
+	chrt, err := helmrender.Fetch(chartPath("with-disabled-component"), "")
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestRender_SetOverrides(t *testing.T) {
 }
 
 func TestRender_DependencyDisabledViaValues(t *testing.T) {
-	chrt, err := helmrender.Fetch(chartPath("with-subcharts"))
+	chrt, err := helmrender.Fetch(chartPath("with-subcharts"), "")
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestRender_DependencyDisabledViaValues(t *testing.T) {
 }
 
 func TestRender_DependencyEnabledViaValues(t *testing.T) {
-	chrt, err := helmrender.Fetch(chartPath("with-subcharts"))
+	chrt, err := helmrender.Fetch(chartPath("with-subcharts"), "")
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestRender_DependencyEnabledViaValues(t *testing.T) {
 }
 
 func TestRender_CustomResourcePresent(t *testing.T) {
-	chrt, err := helmrender.Fetch(chartPath("with-crds"))
+	chrt, err := helmrender.Fetch(chartPath("with-crds"), "")
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}

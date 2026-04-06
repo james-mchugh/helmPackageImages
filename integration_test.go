@@ -24,7 +24,7 @@ func imageDiscoveryPipeline(t *testing.T, chartRef string, manifestOpts manifest
 	t.Helper()
 
 	// Fetch chart.
-	chrt, err := helmrender.Fetch(chartRef)
+	chrt, err := helmrender.Fetch(chartRef, "")
 	if err != nil {
 		t.Fatalf("helm.Fetch: %v", err)
 	}
@@ -125,28 +125,6 @@ crds:
 	sort.Strings(imgs)
 	if !equal(imgs, want) {
 		t.Errorf("got %v, want %v", imgs, want)
-	}
-}
-
-func TestIntegration_MultiChart_CombinedImages(t *testing.T) {
-	seen := map[string]struct{}{}
-	for _, chart := range []string{"simple", "with-disabled-component"} {
-		imgs := imageDiscoveryPipeline(t, chartPath(chart), manifest.Options{})
-		for _, img := range imgs {
-			seen[img] = struct{}{}
-		}
-	}
-	var allImages []string
-	for img := range seen {
-		allImages = append(allImages, img)
-	}
-	sort.Strings(allImages)
-
-	// simple: nginx:1.25.3, busybox:1.36
-	// with-disabled-component (worker off): nginx:1.25.3 (deduped)
-	want := []string{"busybox:1.36", "nginx:1.25.3"}
-	if !equal(allImages, want) {
-		t.Errorf("got %v, want %v", allImages, want)
 	}
 }
 

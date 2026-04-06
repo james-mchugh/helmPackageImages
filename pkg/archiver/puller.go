@@ -37,6 +37,8 @@ func Pull(refs []string, opt PullOptions) (map[string]v1.Image, error) {
 	result := make(map[string]v1.Image)
 	for i, ref := range refs {
 		if opt.ProgressFunc != nil {
+			// todo: this progress bar does not update at the correct time
+			//   consider using Get remote.WithProgress option
 			opt.ProgressFunc(i+1, len(refs), ref)
 		}
 		tag, err := name.ParseReference(ref, name.WeakValidation)
