@@ -2,7 +2,6 @@ package helm
 
 import (
 	"fmt"
-	"strings"
 
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
@@ -34,27 +33,6 @@ func Fetch(ref, version string) (*chart.Chart, error) {
 
 	return chrt, nil
 
-}
-
-// SplitVersion separates an inline version from a chart reference.
-// For OCI and local refs, the ref is returned unchanged with an empty version.
-// For HTTP repo refs, the last ":" segment is treated as the version.
-//
-// Exported so tests can assert the parsing logic directly.
-func SplitVersion(ref string) (cleanRef, version string) {
-	// OCI refs own their colon (it's the tag separator) — don't touch them.
-	if IsOCIRef(ref) {
-		return ref, ""
-	}
-	// Local path prefixes — no version concept.
-	if strings.HasPrefix(ref, "/") || strings.HasPrefix(ref, "./") || strings.HasPrefix(ref, "../") {
-		return ref, ""
-	}
-	// HTTP repo: split on last colon.
-	if idx := strings.LastIndex(ref, ":"); idx >= 0 {
-		return ref[:idx], ref[idx+1:]
-	}
-	return ref, ""
 }
 
 // IsOCIRef reports whether ref is an OCI registry reference.
