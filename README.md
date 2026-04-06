@@ -127,8 +127,9 @@ profiles:
 |-------------------|----------------------------|---------------------------------------------------------------------|
 | `-m, --manifest`  | `<chart-root>/airgap.yaml` | Path to airgap.yaml                                                 |
 | `-p, --profile`   | —                          | Profile name to activate                                            |
-| `-o, --output`    | `<chart-name>.tar`         | Output archive path                   |
+| `-o, --output`    | `<chart-name>.tar`         | Output archive path                                                 |
 | `--format`        | `oci`                      | Output format: `oci` (OCI Image Layout) or `docker` (Docker tarball) |
+| `--version`       | -                          | Version of the chart to scrape images from                          |
 | `--platform`      | current system             | Comma-separated platforms, e.g. `linux/amd64,linux/arm64`           |
 | `--dry-run`       | `false`                    | Print discovered image references without pulling                   |
 | `--set`           | —                          | Helm value overrides, e.g. `--set image.tag=v2` (repeatable)        |
