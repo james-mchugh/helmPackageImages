@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PLUGIN_DIR="${HELM_PLUGIN_DIR}"
-VERSION="${HELM_PLUGIN_VERSION:-0.2.0}"
+VERSION="${HELM_PLUGIN_VERSION:-0.3.0}"
 REPO="james-mchugh/helmPackageImages"
 BIN_DIR="${PLUGIN_DIR}/bin"
 mkdir -p "${BIN_DIR}"
