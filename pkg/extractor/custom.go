@@ -27,15 +27,15 @@ func ExtractCustom(objs []runtime.Object, crds []manifest.CRDEntry) ([]string, e
 
 	seen := map[string]struct{}{}
 	for _, obj := range objs {
-		objType, ok := obj.(*runtime.Unknown)
+		u, ok := obj.(*unstructured.Unstructured)
 		if !ok {
-			return nil, fmt.Errorf("expected *runtime.Unknown, got %T", obj)
+			continue // registered K8s types are handled by ExtractBuiltin
 		}
-		entry, ok := index[objType.TypeMeta]
+		key := runtime.TypeMeta{Kind: u.GetKind(), APIVersion: u.GetAPIVersion()}
+		entry, ok := index[key]
 		if !ok {
 			continue
 		}
-		u := obj.(*unstructured.Unstructured)
 		for _, imgPath := range entry.ImagePaths {
 			imgs, err := extractPaths(u.Object, imgPath)
 			if err != nil {
@@ -52,23 +52,27 @@ func ExtractCustom(objs []runtime.Object, crds []manifest.CRDEntry) ([]string, e
 	return setToSlice(seen), nil
 }
 
-// extractPaths resolves a  JSONPath (e.g. "{.spec.image}") against a
-// generic map. Returns empty string if any segment is missing or not a string.
+// extractPaths resolves a JSONPath expression (e.g. "{.spec.image}") against an
+// unstructured object map. Returns nil if the path is not found. Returns an error
+// if the path expression is syntactically invalid or a matched value is not a string.
 func extractPaths(obj map[string]interface{}, path string) ([]string, error) {
 	jp := jsonpath.New(path)
 	if err := jp.Parse(path); err != nil {
-		// todo: validate this when manifest is parsed
-		return nil, fmt.Errorf("failed to parse JSON path expression")
+		return nil, fmt.Errorf("invalid JSONPath expression %q: %w", path, err)
 	}
 
 	results, err := jp.FindResults(obj)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find JSON path expression")
+		return nil, nil // path not found — skip gracefully
 	}
 
 	var imgs []string
 	for _, result := range results {
 		for _, result := range result {
+			// Unstructured maps store values as interface{}; unwrap one level.
+			if result.Kind() == reflect.Interface {
+				result = result.Elem()
+			}
 			if result.Kind() != reflect.String {
 				return nil, fmt.Errorf(
 					"expected JSONPath expression to return String, received %s",

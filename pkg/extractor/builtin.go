@@ -7,7 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// ExtractBuiltin scans Kubernetes objects images in known workload types.
+// ExtractBuiltin scans Kubernetes objects for images in known workload types.
 // Duplicate images are removed before returning.
 func ExtractBuiltin(objs []runtime.Object) ([]string, error) {
 	seen := map[string]struct{}{}
