@@ -163,6 +163,65 @@ settings:
 	}
 }
 
+func TestIntegration_EnvVarExtraction(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "airgap.yaml", `
+settings:
+  envVarPatterns:
+    - ".*_IMAGE$"
+`)
+	imgs := imageDiscoveryPipeline(t, chartPath("configmap-images"),
+		manifest.Options{ManifestPath: filepath.Join(dir, "airgap.yaml")},
+	)
+	// Builtin: myregistry.io/app:v1.0.0; env var: myregistry.io/sidecar:v1.0.0
+	want := []string{"myregistry.io/app:v1.0.0", "myregistry.io/sidecar:v1.0.0"}
+	sort.Strings(imgs)
+	if !equal(imgs, want) {
+		t.Errorf("got %v, want %v", imgs, want)
+	}
+}
+
+func TestIntegration_ConfigMapExtraction_HeuristicMode(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "airgap.yaml", `
+configMapRules:
+  - namePattern: "app-images"
+`)
+	imgs := imageDiscoveryPipeline(t, chartPath("configmap-images"),
+		manifest.Options{ManifestPath: filepath.Join(dir, "airgap.yaml")},
+	)
+	// Builtin: myregistry.io/app:v1.0.0; configmap: myregistry.io/extra:v1.0.0, myregistry.io/tool:v2.0.0
+	want := []string{"myregistry.io/app:v1.0.0", "myregistry.io/extra:v1.0.0", "myregistry.io/tool:v2.0.0"}
+	sort.Strings(imgs)
+	if !equal(imgs, want) {
+		t.Errorf("got %v, want %v", imgs, want)
+	}
+}
+
+func TestIntegration_EnvVarAndConfigMapCombined(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "airgap.yaml", `
+settings:
+  envVarPatterns:
+    - ".*_IMAGE$"
+configMapRules:
+  - namePattern: "app-images"
+`)
+	imgs := imageDiscoveryPipeline(t, chartPath("configmap-images"),
+		manifest.Options{ManifestPath: filepath.Join(dir, "airgap.yaml")},
+	)
+	want := []string{
+		"myregistry.io/app:v1.0.0",
+		"myregistry.io/extra:v1.0.0",
+		"myregistry.io/sidecar:v1.0.0",
+		"myregistry.io/tool:v2.0.0",
+	}
+	sort.Strings(imgs)
+	if !equal(imgs, want) {
+		t.Errorf("got %v, want %v", imgs, want)
+	}
+}
+
 // helpers
 
 func writeFile(t *testing.T, dir, name, content string) {

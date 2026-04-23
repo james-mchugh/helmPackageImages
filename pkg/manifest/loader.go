@@ -23,6 +23,7 @@ type Options struct {
 	OverridePlatform     string
 	OverrideScrapeValues *bool
 	OverrideIncludeDeps  *bool
+	OverrideStrict       *bool
 }
 
 // Load locates, parses, and resolves the manifest according to opt.
@@ -55,9 +56,10 @@ func Load(opt Options) (*Manifest, error) {
 
 	// Build resolved manifest.
 	m := &Manifest{
-		CRDs:     raw.CRDs,
-		Values:   raw.Values,
-		Settings: raw.Settings,
+		CRDs:           raw.CRDs,
+		ConfigMapRules: raw.ConfigMapRules,
+		Values:         raw.Values,
+		Settings:       raw.Settings,
 	}
 	if m.Values == nil {
 		m.Values = map[string]interface{}{}
@@ -69,6 +71,9 @@ func Load(opt Options) (*Manifest, error) {
 	}
 	if opt.OverrideScrapeValues != nil {
 		m.Settings.ScrapeValues = *opt.OverrideScrapeValues
+	}
+	if opt.OverrideStrict != nil {
+		m.Settings.StrictImageValidation = *opt.OverrideStrict
 	}
 
 	return m, nil
@@ -113,6 +118,11 @@ func mergeProfile(base *rawManifest, p rawProfile) {
 		base.CRDs = *p.CRDs
 	}
 
+	// ConfigMapRules: replace when profile explicitly sets the field (even to empty).
+	if p.ConfigMapRules != nil {
+		base.ConfigMapRules = *p.ConfigMapRules
+	}
+
 	// Values: deep-merge.
 	if p.Values != nil {
 		if base.Values == nil {
@@ -128,6 +138,12 @@ func mergeProfile(base *rawManifest, p rawProfile) {
 		}
 		if p.Settings.ScrapeValues != nil {
 			base.Settings.ScrapeValues = *p.Settings.ScrapeValues
+		}
+		if p.Settings.EnvVarPatterns != nil {
+			base.Settings.EnvVarPatterns = *p.Settings.EnvVarPatterns
+		}
+		if p.Settings.StrictImageValidation != nil {
+			base.Settings.StrictImageValidation = *p.Settings.StrictImageValidation
 		}
 	}
 }

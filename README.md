@@ -66,6 +66,15 @@ helm package-images oci://registry-1.docker.io/bitnamicharts/nginx
 helm package-images ./my-chart --dry-run
 ```
 
+### Fail on invalid image references
+
+```bash
+helm package-images ./my-chart --strict
+```
+
+Without `--strict`, any extracted string that is not a valid image reference is logged as a warning and filtered out.
+With `--strict`, the command fails instead.
+
 ### Override Helm values
 
 ```bash
@@ -104,6 +113,16 @@ settings:
   # Useful for charts that construct image refs outside of standard fields.
   scrapeValues: false
 
+  # Extract images from container env vars whose names match any of these regexes.
+  # The env var's value is treated as an image reference. Disabled if absent.
+  envVarPatterns:
+    - ".*_IMAGE$"
+    - ".*_REPOSITORY$"
+
+  # Fail the command if any extracted string is not a valid image reference.
+  # Without this, invalid refs are always logged as warnings and filtered out.
+  strictImageValidation: false
+
 # Image paths for custom resources (CRDs) deployed by the chart.
 crds:
   - kind: MyApp
@@ -112,6 +131,23 @@ crds:
       - "{.spec.image}"
       - "{.spec.sidecar.image}"
 
+# Rules for extracting images from ConfigMap data values.
+# Each rule may filter by ConfigMap name and data key, then extracts using
+# one of three modes: JSONPath (for YAML/JSON values), regex, or a heuristic
+# that scans for image-like tokens when neither jsonPath nor regex is set.
+configMapRules:
+  # JSONPath mode — parse the value as YAML/JSON and extract a specific field.
+  - namePattern: "app-config"     # regex on ConfigMap metadata.name; empty = all
+    keyPattern: "config\\.yaml"   # regex on data key; empty = all keys
+    jsonPath: "{.image}"
+
+  # Regex mode — find all matches of the pattern in the raw string value.
+  - namePattern: "image-list"
+    regex: '\S+/\S+:\S+'
+
+  # Heuristic mode — scan whitespace-separated tokens with looksLikeImage.
+  - namePattern: "extra-images"
+
 # Named profiles — override base settings for specific environments.
 profiles:
   production:
@@ -119,21 +155,46 @@ profiles:
       platform: linux/amd64
     values:
       replicaCount: 3
+  strict:
+    settings:
+      strictImageValidation: true
+    configMapRules:
+      - namePattern: "app-config"
+        jsonPath: "{.image}"
 ```
+
+### `configMapRules` extraction modes
+
+| Mode          | When              | Behaviour                                                                                                       |
+|---------------|-------------------|-----------------------------------------------------------------------------------------------------------------|
+| **JSONPath**  | `jsonPath` is set | Parses the data value as YAML/JSON and extracts the value at the given path, e.g. `{.image}`                    |
+| **Regex**     | `regex` is set    | Scans the raw string value and collects every match of the regex                                                |
+| **Heuristic** | Neither set       | Splits the value on whitespace and keeps tokens that look like image refs (contain `/` or `:` and are not URLs) |
+
+`jsonPath` takes precedence when both are set. `namePattern` and `keyPattern` are both optional — omitting them applies
+the rule to all ConfigMaps / all data keys.
+
+### Image validation
+
+Every extracted string (from all sources) is validated against the standard image reference format
+using [go-containerregistry](https://github.com/google/go-containerregistry). Invalid references are always logged to
+stderr and filtered out before pulling. Use `--strict` (or `settings.strictImageValidation: true` in `airgap.yaml`) to
+turn warnings into a hard failure instead.
 
 ## Flags
 
-| Flag              | Default                    | Description                                                         |
-|-------------------|----------------------------|---------------------------------------------------------------------|
-| `-m, --manifest`  | `<chart-root>/airgap.yaml` | Path to airgap.yaml                                                 |
-| `-p, --profile`   | —                          | Profile name to activate                                            |
-| `-o, --output`    | `<chart-name>.tar`         | Output archive path                                                 |
+| Flag              | Default                    | Description                                                          |
+|-------------------|----------------------------|----------------------------------------------------------------------|
+| `-m, --manifest`  | `<chart-root>/airgap.yaml` | Path to airgap.yaml                                                  |
+| `-p, --profile`   | —                          | Profile name to activate                                             |
+| `-o, --output`    | `<chart-name>.tar`         | Output archive path                                                  |
 | `--format`        | `oci`                      | Output format: `oci` (OCI Image Layout) or `docker` (Docker tarball) |
-| `--version`       | -                          | Version of the chart to scrape images from                          |
-| `--platform`      | current system             | Comma-separated platforms, e.g. `linux/amd64,linux/arm64`           |
-| `--dry-run`       | `false`                    | Print discovered image references without pulling                   |
-| `--set`           | —                          | Helm value overrides, e.g. `--set image.tag=v2` (repeatable)        |
-| `--scrape-values` | `false`                    | Heuristically scan `values.yaml` for image-like strings             |
+| `--version`       | -                          | Version of the chart to scrape images from                           |
+| `--platform`      | current system             | Comma-separated platforms, e.g. `linux/amd64,linux/arm64`            |
+| `--dry-run`       | `false`                    | Print discovered image references without pulling                    |
+| `--set`           | —                          | Helm value overrides, e.g. `--set image.tag=v2` (repeatable)         |
+| `--scrape-values` | `false`                    | Heuristically scan `values.yaml` for image-like strings              |
+| `--strict`        | `false`                    | Fail if any discovered image reference is not a valid image ref      |
 
 ## Transferring to an air-gapped environment
 

@@ -1,0 +1,4 @@
+apiVersion: v2
+name: configmap-images
+description: Fixture chart for ConfigMap and env var image extraction tests
+version: 0.1.0

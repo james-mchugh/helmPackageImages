@@ -30,6 +30,7 @@ type options struct {
 	dryRun       bool
 	setValues    []string
 	scrapeValues bool
+	strict       bool
 	verbose      bool
 	version      string
 }
@@ -72,6 +73,7 @@ to be registered via 'helm repo add' first.`,
 	flags.BoolVar(&opt.dryRun, "dry-run", false, "List discovered images without pulling or archiving")
 	flags.StringArrayVar(&opt.setValues, "set", nil, "Helm value overrides (may be repeated)")
 	flags.BoolVar(&opt.scrapeValues, "scrape-values", false, "Naively scan values.yaml for image-like strings")
+	flags.BoolVar(&opt.strict, "strict", false, "Fail if any discovered image reference is not a valid image ref")
 	flags.BoolVarP(&opt.verbose, "verbose", "v", false, "Print detailed progress to stderr")
 
 	return cmd
@@ -100,11 +102,16 @@ func run(charts []string, opt options) error {
 		t := true
 		overrideScrapeValues = &t
 	}
+	var overrideStrict *bool
+	if opt.strict {
+		t := true
+		overrideStrict = &t
+	}
 
 	seen := map[string]struct{}{}
 	logf("Processing ref %q...", ref)
 
-	chart, imgs, err := processChart(ref, opt, overrideScrapeValues, verbf)
+	chart, imgs, err := processChart(ref, opt, overrideScrapeValues, overrideStrict, logf, verbf)
 	if err != nil {
 		return fmt.Errorf("ref %q: %w", ref, err)
 	}
@@ -173,6 +180,8 @@ func processChart(
 	ref string,
 	opt options,
 	overrideScrapeValues *bool,
+	overrideStrict *bool,
+	logf func(string, ...any),
 	verbf func(string, ...any),
 ) (*chart.Chart, []string, error) {
 	// Fetch chart (local path, OCI, or HTTP repo).
@@ -193,6 +202,7 @@ func processChart(
 			Chart:                chrt,
 			OverridePlatform:     opt.platform,
 			OverrideScrapeValues: overrideScrapeValues,
+			OverrideStrict:       overrideStrict,
 		},
 	)
 	if err != nil {
@@ -215,5 +225,11 @@ func processChart(
 	// Extract images.
 	verbf("  Extracting image references from %q...", chrt.Name())
 	imgs, err := extractor.Extract(docs, m)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Validate image references — always warns on invalid refs, fails hard when strict.
+	imgs, err = extractor.ValidateImages(imgs, m.Settings.StrictImageValidation, logf)
 	return chrt, imgs, err
 }

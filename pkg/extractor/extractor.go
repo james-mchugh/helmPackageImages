@@ -38,6 +38,28 @@ func Extract(docs []runtime.Object, m *manifest.Manifest) ([]string, error) {
 		seen[img] = struct{}{}
 	}
 
+	// 4. Env var name-pattern extraction (opt-in).
+	if len(m.Settings.EnvVarPatterns) > 0 {
+		envImgs, err := ExtractEnvVars(docs, m.Settings.EnvVarPatterns)
+		if err != nil {
+			return nil, err
+		}
+		for _, img := range envImgs {
+			seen[img] = struct{}{}
+		}
+	}
+
+	// 5. ConfigMap rules extraction (opt-in).
+	if len(m.ConfigMapRules) > 0 {
+		cmImgs, err := ExtractConfigMaps(docs, m.ConfigMapRules)
+		if err != nil {
+			return nil, err
+		}
+		for _, img := range cmImgs {
+			seen[img] = struct{}{}
+		}
+	}
+
 	result := setToSlice(seen)
 	sort.Strings(result)
 	return result, nil
